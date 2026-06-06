@@ -1,0 +1,212 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+
+st.set_page_config(
+    page_title="House Price Prediction",
+    page_icon="🏠",
+    layout="wide"
+)
+
+st.title("🏠 House Price Prediction System")
+st.markdown("### Predict house prices using Machine Learning")
+
+
+@st.cache_data
+def load_data():
+    data = pd.read_csv("house_prices.csv")
+    data = data.dropna()
+    return data
+
+
+df = load_data()
+
+df_encoded = pd.get_dummies(df, drop_first=True)
+
+X = df_encoded.drop("price", axis=1)
+y = df_encoded["price"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+linear_model = LinearRegression()
+linear_model.fit(X_train, y_train)
+
+rf_model = RandomForestRegressor(
+    n_estimators=200,
+    random_state=42
+)
+rf_model.fit(X_train, y_train)
+
+linear_pred = linear_model.predict(X_test)
+rf_pred = rf_model.predict(X_test)
+
+linear_r2 = r2_score(y_test, linear_pred)
+rf_r2 = r2_score(y_test, rf_pred)
+
+linear_mae = mean_absolute_error(y_test, linear_pred)
+rf_mae = mean_absolute_error(y_test, rf_pred)
+
+linear_rmse = np.sqrt(mean_squared_error(y_test, linear_pred))
+rf_rmse = np.sqrt(mean_squared_error(y_test, rf_pred))
+
+if rf_r2 >= linear_r2:
+    best_model = rf_model
+    best_model_name = "Random Forest Regressor"
+    best_pred = rf_pred
+    best_r2 = rf_r2
+    best_mae = rf_mae
+    best_rmse = rf_rmse
+else:
+    best_model = linear_model
+    best_model_name = "Linear Regression"
+    best_pred = linear_pred
+    best_r2 = linear_r2
+    best_mae = linear_mae
+    best_rmse = linear_rmse
+
+
+st.sidebar.header("🏡 Enter House Details")
+
+area = st.sidebar.number_input("Area", 500, 20000, 3000)
+bedrooms = st.sidebar.number_input("Bedrooms", 1, 10, 3)
+bathrooms = st.sidebar.number_input("Bathrooms", 1, 5, 2)
+stories = st.sidebar.number_input("Stories", 1, 5, 2)
+parking = st.sidebar.number_input("Parking Spaces", 0, 5, 1)
+
+mainroad = st.sidebar.selectbox("Main Road", ["yes", "no"])
+guestroom = st.sidebar.selectbox("Guest Room", ["yes", "no"])
+basement = st.sidebar.selectbox("Basement", ["yes", "no"])
+hotwaterheating = st.sidebar.selectbox("Hot Water Heating", ["yes", "no"])
+airconditioning = st.sidebar.selectbox("Air Conditioning", ["yes", "no"])
+prefarea = st.sidebar.selectbox("Preferred Area", ["yes", "no"])
+furnishingstatus = st.sidebar.selectbox(
+    "Furnishing Status",
+    ["furnished", "semi-furnished", "unfurnished"]
+)
+
+input_df = pd.DataFrame({
+    "area": [area],
+    "bedrooms": [bedrooms],
+    "bathrooms": [bathrooms],
+    "stories": [stories],
+    "mainroad": [mainroad],
+    "guestroom": [guestroom],
+    "basement": [basement],
+    "hotwaterheating": [hotwaterheating],
+    "airconditioning": [airconditioning],
+    "parking": [parking],
+    "prefarea": [prefarea],
+    "furnishingstatus": [furnishingstatus]
+})
+
+input_encoded = pd.get_dummies(input_df)
+input_encoded = input_encoded.reindex(columns=X.columns, fill_value=0)
+
+
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🔮 Prediction",
+    "📊 Model Performance",
+    "📈 Charts",
+    "📁 Dataset"
+])
+
+
+with tab1:
+    st.subheader("House Price Prediction")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("### Input Summary")
+        st.dataframe(input_df)
+
+    with col2:
+        st.write("### Selected Model")
+        st.info(f"This system uses the best performing model: {best_model_name}")
+
+    if st.sidebar.button("Predict Price"):
+        prediction = best_model.predict(input_encoded)[0]
+
+        st.success("Prediction Completed Successfully 🎉")
+        st.metric("Estimated House Price", f"RM {prediction:,.2f}")
+
+        st.warning(
+            "Note: This is an estimated price based on the dataset and machine learning model."
+        )
+
+
+with tab2:
+    st.subheader("Model Performance Comparison")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Best R² Score", f"{best_r2:.3f}")
+    col2.metric("Best MAE", f"RM {best_mae:,.0f}")
+    col3.metric("Best RMSE", f"RM {best_rmse:,.0f}")
+
+    comparison = pd.DataFrame({
+        "Model": ["Linear Regression", "Random Forest Regressor"],
+        "R² Score": [linear_r2, rf_r2],
+        "MAE": [linear_mae, rf_mae],
+        "RMSE": [linear_rmse, rf_rmse]
+    })
+
+    st.dataframe(comparison)
+
+    st.info(
+        "R² Score shows how well the model explains the price variation. "
+        "MAE and RMSE show the prediction error."
+    )
+
+
+with tab3:
+    st.subheader("Actual Price vs Predicted Price")
+
+    fig, ax = plt.subplots()
+    ax.scatter(y_test, best_pred)
+    ax.set_xlabel("Actual Price")
+    ax.set_ylabel("Predicted Price")
+    ax.set_title(f"Actual vs Predicted using {best_model_name}")
+
+    st.pyplot(fig)
+
+    if best_model_name == "Random Forest Regressor":
+        st.subheader("Feature Importance")
+
+        importance = pd.DataFrame({
+            "Feature": X.columns,
+            "Importance": best_model.feature_importances_
+        }).sort_values(by="Importance", ascending=False)
+
+        st.dataframe(importance)
+
+        fig2, ax2 = plt.subplots()
+        ax2.barh(importance["Feature"], importance["Importance"])
+        ax2.set_xlabel("Importance")
+        ax2.set_ylabel("Feature")
+        ax2.set_title("Feature Importance")
+        ax2.invert_yaxis()
+
+        st.pyplot(fig2)
+
+
+with tab4:
+    st.subheader("Dataset Preview")
+
+    st.write("Dataset Shape:", df.shape)
+    st.dataframe(df.head(20))
+
+    st.subheader("Dataset Statistics")
+    st.dataframe(df.describe())
+
+    st.subheader("Missing Values")
+    st.dataframe(df.isnull().sum())
